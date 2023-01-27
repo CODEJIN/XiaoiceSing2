@@ -1,0 +1,6 @@
+*.pyc
+.ipynb_checkpoints
+wandb
+results
+vocgan_sing_mzf_22k_500.pts
+Pattern_Generator_Secret.py
