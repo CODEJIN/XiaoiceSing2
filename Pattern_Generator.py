@@ -11,6 +11,140 @@ from meldataset import mel_spectrogram, spectrogram, spec_energy
 from Arg_Parser import Recursive_Parse
 
 
+def AIHub_Mediazen(
+    hyper_paramters: Namespace,
+    dataset_path: str
+    ):
+    path_dict = {}
+    for root, _, files in os.walk(os.path.join(dataset_path).replace('\\', '/')):
+        for file in files:
+            key, extension = os.path.splitext(file)
+            if not extension.upper() in ['.WAV', '.MID']:
+                continue
+            
+            if not key in path_dict.keys():
+                path_dict[key] = {}
+            path_dict[key]['wav' if extension.upper() == '.WAV' else 'mid'] = os.path.join(root, file).replace('\\', '/')            
+
+    paths = [
+        (value['wav'], value['mid'], key.strip().split('_')[0].upper(), key.strip().split('_')[4].upper())
+        for key, value in path_dict.items()
+        if 'wav' in value.keys() and 'mid' in value.keys()
+        ]
+    genre_dict = {
+        'BA': 'Ballade',
+        'RO': 'Rock',
+        'TR': 'Trot'
+        }
+
+    for index, (wav_path, midi_path, genre, singer) in tqdm(
+        enumerate(paths),
+        total= len(paths),
+        desc= 'AIHub_Mediazen'
+        ):
+        music_label = os.path.splitext(os.path.basename(wav_path))[0]
+        pattern_path = os.path.join(
+            hyper_paramters.Train.Train_Pattern.Path if not index == (len(paths) - 1) else hyper_paramters.Train.Eval_Pattern.Path,
+            'AIHub_Mediazen',
+            singer,
+            f'{music_label}.pickle'
+            ).replace('\\', '/')
+        if os.path.exists(pattern_path):
+            continue
+        genre = genre_dict[genre]
+
+        mid = mido.MidiFile(midi_path, charset='CP949')
+
+        music = []
+
+        current_lyric = ''
+        current_note = None
+        current_time = 0.0
+
+        # Note on 쉼표
+        # From Lyric to message before note on: real note        
+        for message in list(mid):
+            if message.type == 'note_on' and message.velocity != 0:
+                if message.time < 0.1:
+                    current_time += message.time
+                    if current_lyric in ['', None]:
+                        music.append((current_time, '<X>', 0))
+                    else:
+                        music.append((current_time, current_lyric, current_note))
+                else:
+                    if not current_lyric in ['', None]:
+                        music.append((current_time, current_lyric, current_note))
+                    else:
+                        message.time += current_time
+                    music.append((message.time, '<X>', 0))
+                current_time = 0.0
+                current_lyric = ''
+                current_note = None
+            elif message.type == 'lyrics':
+                if message.text == '\r':    # mzm 02678.mid
+                    logging.info(wav_path, midi_path)
+                    continue
+                current_lyric = message.text.strip()
+                current_time += message.time
+            elif message.type == 'note_off' or (message.type == 'note_on' and message.velocity == 0):
+                current_note = message.note
+                current_time += message.time
+            # elif message.type == 'marker':
+            #     continue
+            else:
+                current_time += message.time
+        if current_lyric in ['', None]:
+            if music[-1][1] == '<X>':
+                music[-1] = (music[-1][0] + current_time, music[-1][1], music[-1][2])
+            else:
+                music.append((current_time, '<X>', 0))
+        else:
+            music.append((current_time, current_lyric, current_note))
+        music = music[1:]
+
+        audio, _ = librosa.load(wav_path, sr= hyper_paramters.Sound.Sample_Rate)
+
+        initial_audio_length = audio.shape[0]
+        while True:
+            if music[0][1] in ['', '<X>', 'J']:
+                audio = audio[int(music[0][0] * hyper_paramters.Sound.Sample_Rate):]
+                music = music[1:]
+            if music[-1][1] in ['', '<X>', 'H']:
+                if music[-1][0] > 0.0:  # to prevent all remove
+                    audio = audio[:-int(music[-1][0] * hyper_paramters.Sound.Sample_Rate)]
+                music = music[:-1]
+            else:
+                break
+        
+        audio = audio[:int(sum([x[0] for x in music]) * hyper_paramters.Sound.Sample_Rate)]    # remove last silence
+        
+        # This is to avoid to use wrong data.
+        if initial_audio_length * 0.5 > audio.shape[0]:
+            continue
+
+        audio = librosa.util.normalize(audio) * 0.95
+        
+        lyrics, notes, durations = Convert_Feature_Based_Music(
+            music= music,
+            sample_rate= hyper_paramters.Sound.Sample_Rate,
+            frame_shift= hyper_paramters.Sound.Frame_Shift,
+            consonant_duration= hyper_paramters.Duration.Consonant_Duration,
+            equality_duration= hyper_paramters.Duration.Equality
+            )
+        lyrics, notes = Expand_by_Duration(lyrics, notes, durations)
+        
+        Pattern_File_Generate(
+            lyric= lyrics,
+            note= notes,
+            audio= audio,
+            music_label= music_label,
+            singer= singer,
+            genre= genre,
+            dataset= 'AIHub_Mediazen',
+            is_eval_music= index == (len(paths) - 1),
+            hyper_paramters= hyper_paramters
+            )
+
 def CSD_Fix(
     hyper_paramters: Namespace,
     dataset_path: str
@@ -445,6 +579,7 @@ def Metadata_Generate(
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
     argparser.add_argument('-csd', '--csd_path', required= False)
+    argparser.add_argument('-am', '--aihub_mediazen_path', required= False)
     argparser.add_argument('-hp', '--hyper_paramters', required= True)
     args = argparser.parse_args()
 
@@ -459,8 +594,15 @@ if __name__ == '__main__':
             hyper_paramters= hp,
             dataset_path= args.csd_path
             )
+    if args.aihub_mediazen_path:
+        AIHub_Mediazen(
+            hyper_paramters= hp,
+            dataset_path= args.aihub_mediazen_path
+            )
     
     Metadata_Generate(hp, False)
     Metadata_Generate(hp, True)
 
 # python Pattern_Generator.py -hp Hyper_Parameters.yaml -nams D:/Datasets/rawdata_music/Nams -csd D:/Datasets/rawdata_music/CSD
+
+# python Pattern_Generator.py -hp Hyper_Parameters_Linearized2_AIHub.yaml -am D:/Datasets/rawdata_music/AIHub

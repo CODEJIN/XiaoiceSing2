@@ -1,24 +1,30 @@
-# MLP Singer
+# XiaoiceSing 2
 
-This code is an implementation for Singing TTS. The algorithm is based on the following papers:
+This code is an implementation for XiaoiceSing 2. The algorithm is based on the following papers:
+```
+Wang, C., Zeng, C., & He, X. (2022). Xiaoicesing 2: A High-Fidelity Singing Voice Synthesizer Based on Generative Adversarial Network. arXiv preprint arXiv:2210.14666.
+```
 
-```
-Tae, J., Kim, H., & Lee, Y. (2021). MLP Singer: Towards Rapid Parallel Korean Singing Voice Synthesis. arXiv preprint arXiv:2106.07886.
-Tolstikhin, I., Houlsby, N., Kolesnikov, A., Beyer, L., Zhai, X., Unterthiner, T., ... & Dosovitskiy, A. (2021). Mlp-mixer: An all-mlp architecture for vision. arXiv preprint arXiv:2105.01601.
-```
+* Unfortunately, due to the limitations of the equipment, this repository was simply tested to see whether the code worked. So please note that this repository will be on the status of __Work In Progress__ for a long time.
 
 # Structure
-* Structure is based on the MLP Singer.
+* Structure is based on the XiaoiceSing 2.
 * I changed several hyper parameters and data type
     * One of mel or spectrogram is can be selected as a feature type.
     * Token type is changed from phoneme to grapheme.
+    * Duration predictor and upsampler is based on the Gaussian upsampler.
+    * By vocoder problem, I changed the sample rate from 48Khz of paper to 22.05Khz.
 
-# Used dataset
+# Tested dataset
 * [CSD Dataset](https://github.com/emotiontts/emotiontts_open_db/tree/master/Dataset/CSD)
-
+    * A modified version of some data with differences between note and f0 through pitch tracking (unpublished).
+* [AIHub Multi Singer Singing Dataset](https://aihub.or.kr/aihubdata/data/view.do?currMenu=115&topMenu=100&aihubDataSe=realm&dataSetSn=465)
 
 # Hyper parameters
 Before proceeding, please set the pattern, inference, and checkpoint paths in [Hyper_Parameters.yaml](Hyper_Parameters.yaml) according to your environment.
+
+* Feature_Type
+    * Setting the feature type (`Mel` or `Spectrogram`).
 
 * Sound
     * Setting basic sound parameters.
@@ -26,25 +32,21 @@ Before proceeding, please set the pattern, inference, and checkpoint paths in [H
 * Tokens
     * The number of Lyric token.
 
-* Max_Note
+* Notes
     * The highest note value for embedding.
 
-* Duration
-    * Min duration is used at pattern generating only.
-    * Max duration is decided the maximum time step of model.
-        MLP mixer always use the maximum time step.
+* Durations
+    * The longest duration of note.
+* Duration        
     * Equality set the strategy about syllable to grapheme.
         * When `True`, onset, nucleus, and coda have same length or ±1 difference.
         * When `False`, onset and coda have Consonant_Duration length, and nucleus has duration - 2 * Consonant_Duration.
 
-* Feature_Type
-    * Setting the feature type (`Mel` or `Spectrogram`).
-
 * Encoder
     * Setting the encoder(embedding).
 
-* Mixer
-    * Setting the MLP mixer.
+* Variance_Block
+    * Setting the duration predictor
 
 * Train
     * Setting the parameters of training.
@@ -82,6 +84,8 @@ python Pattern_Generate.py [parameters]
 ## Parameters
 * -csd
     * The path of children's song dataset
+* -aihub
+    * The path of AIHub Multi Singer Singing Dataset.
 * -step
     * The note step that is explored when generating patterns.
     * The smaller step is, the more patterns are created in one song.
